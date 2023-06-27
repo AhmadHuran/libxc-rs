@@ -1,34 +1,30 @@
+// Copyright 2023 Ahmad W. Huran
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+
 use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    // Tell cargo to look for shared libraries in the specified directory
-    println!("cargo:rustc-link-search=/opt/etsf/lib/");
+    let sysdep = system_deps::Config::new().probe().unwrap();
 
-    // Tell cargo to tell rustc to link the system bzip2
-    // shared library.
-    println!("cargo:rustc-link-lib=xc");
+    let inc:Vec<String> = sysdep
+        .all_include_paths()
+        .into_iter()
+        .map(|b| b.clone().into_os_string().into_string().unwrap())
+        .map(|b| format!("-I{}", b))
+        .collect();
 
-    // Tell cargo to invalidate the built crate whenever the wrapper changes
-    println!("cargo:rerun-if-changed=libxc.h");
-
-    // The bindgen::Builder is the main entry point
-    // to bindgen, and lets you build up options for
-    // the resulting bindings.
     let bindings = bindgen::Builder::default()
-        // The input header we would like to generate
-        // bindings for.
         .header("libxc.h")
-        .clang_arg("-I/opt/etsf/include/")
-        // Tell cargo to invalidate the built crate whenever any of the
-        // included header files changed.
+        .clang_arg(&inc[0])
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
-        // Finish the builder and generate the bindings.
         .generate()
-        // Unwrap the Result and panic on failure.
         .expect("Unable to generate bindings");
 
-    // Write the bindings to the $OUT_DIR/bindings.rs file.
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
         .write_to_file(out_path.join("libxc-bindings.rs"))

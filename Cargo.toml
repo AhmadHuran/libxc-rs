@@ -3,10 +3,13 @@ name = "libxc-rs"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0.71"
 
 [build-dependencies]
 bindgen = "0.66.1"
+system-deps = "6.1.1"
+
+[package.metadata.system-deps]
+libxc = "6.2.2"
