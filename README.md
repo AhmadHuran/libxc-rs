@@ -8,11 +8,15 @@ Currently, only LDA and GGA functionals with exc vrho and vsigma support.
 
 Must be visible to `pkg-config`. If not, compile and install libxc then add to your `.bashrc`
 
-`export PKG_CONFIG_PATH=/path/to/libxc/pkgconfig/`
+```
+export PKG_CONFIG_PATH=/path/to/libxc/pkgconfig/
+```
 ### Installation
 In the root of your crate execute
 
-`cargo add --git https://github.com/AhmadHuran/libxc-rs.git`
+```
+cargo add --git https://github.com/AhmadHuran/libxc-rs.git
+```
 
 ### To-do
 - [ ] Add covering tests
