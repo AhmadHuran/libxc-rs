@@ -205,7 +205,7 @@ impl LibXCFunctional{
 
     }
 
-    pub fn get_family(&self) -> LibXCFamily{
+    pub fn get_family(&self) -> &LibXCFamily{
         return &self.family
     }
 }
