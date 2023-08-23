@@ -213,8 +213,11 @@ impl LibXCFunctional{
         return self.id
     }
 
-    pub fn get_spin(&self) -> LibXCSpin{
-        self.spin
+    pub fn get_spin(&self) -> usize{
+        match &self.spin {
+            LibXCSpin::Unpolarized => 0,
+            LibXCSpin::Polarized => 1,
+        }
     }
 }
 
