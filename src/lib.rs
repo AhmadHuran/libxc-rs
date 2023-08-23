@@ -208,6 +208,14 @@ impl LibXCFunctional{
     pub fn get_family(&self) -> &LibXCFamily{
         return &self.family
     }
+    
+    pub fn get_id(&self) -> u32{
+        return &self.id
+    }
+
+    pub fn get_spin(&self) -> LibXCSpin{
+        self.spin
+    }
 }
 
 impl Drop for LibXCFunctional{
