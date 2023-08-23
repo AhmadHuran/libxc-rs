@@ -210,7 +210,7 @@ impl LibXCFunctional{
     }
     
     pub fn get_id(&self) -> u32{
-        return &self.id
+        return self.id
     }
 
     pub fn get_spin(&self) -> LibXCSpin{
