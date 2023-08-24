@@ -117,9 +117,12 @@ impl LibXCFunctional{
     }
 
 
-    pub fn eval_exc(&self, rho:&Vec<f64>, sigma: Option<&Vec<f64>>) -> Result<Vec<f64>> {
+    pub fn eval_exc<S>(&self, rho:S, sigma: Option<S>) -> Result<Vec<f64>>
+    where S: AsRef<[f64]>
+    {
 
-        let mut n_points = rho.len();
+        let rho_slice: &[f64] = rho.as_ref();
+        let mut n_points = rho_slice.len();
 
         if n_points % self.dim[0] != 0 {
             return Err(anyhow!("Length of spin polarized rho must be  even!"))
@@ -128,7 +131,7 @@ impl LibXCFunctional{
         n_points = n_points / self.dim[0];
 
         let func_ptr = &self.func as *const xc_func_type;
-        let rho_ptr = rho.as_ptr() as *const c_double;
+        let rho_ptr = rho_slice.as_ptr() as *const c_double;
 
 
         let mut zk: Vec<f64> = vec![0.0; n_points];
@@ -146,11 +149,12 @@ impl LibXCFunctional{
                     return Err(anyhow!("Expecting sigma not None for evaluating a GGA functional!"))
                 };
 
-                if sig.len() % self.dim[1] != 0 {
+                let sig_slice: &[f64] = sig.as_ref();
+                if sig_slice.len() % self.dim[1] != 0 {
                     return Err(anyhow!("Length of spin polarized sigma must be 3 times the number of points!"))
                 }
 
-                let sig_ptr = sig.as_ptr() as *const c_double;
+                let sig_ptr = sig_slice.as_ptr() as *const c_double;
                 unsafe{xc_gga_exc(func_ptr, n_points, rho_ptr, sig_ptr, zk_ptr)};
             },
 
@@ -159,9 +163,12 @@ impl LibXCFunctional{
         Ok(zk)
     }
 
-    pub fn eval_vxc(&self, rho:&Vec<f64>, sigma: Option<&Vec<f64>>) -> Result<VxcReturnType> {
+    pub fn eval_vxc<S>(&self, rho: S, sigma: Option<S>) -> Result<VxcReturnType>
+    where S: AsRef<[f64]>
+    {
 
-        let mut n_points = rho.len();
+        let rho_slice: &[f64] = rho.as_ref();
+        let mut n_points = rho_slice.len();
 
         if n_points % self.dim[0] != 0 {
             return Err(anyhow!("Length of spin polarized rho must be  even!"))
@@ -170,7 +177,7 @@ impl LibXCFunctional{
         n_points = n_points / self.dim[0];
 
         let func_ptr = &self.func as *const xc_func_type;
-        let rho_ptr = rho.as_ptr() as *const c_double;
+        let rho_ptr = rho_slice.as_ptr() as *const c_double;
 
 
         let mut v_rho: Vec<f64> = vec![0.0; self.dim[0]*n_points];
@@ -189,11 +196,12 @@ impl LibXCFunctional{
                     return Err(anyhow!("Expecting sigma not None for evaluating a GGA functional!"))
                 };
 
-                if sig.len() % self.dim[1] != 0 {
+                let sig_slice: &[f64] = sig.as_ref();
+                if sig_slice.len() % self.dim[1] != 0 {
                     return Err(anyhow!("Length of spin polarized sigma must be 3 times the number of points!"))
                 }
 
-                let sig_ptr = sig.as_ptr() as *const c_double;
+                let sig_ptr = sig_slice.as_ptr() as *const c_double;
                 let mut v_sigma: Vec<f64> = vec![0.0; self.dim[1]*n_points];
                 let v_sigma_ptr = v_sigma.as_mut_ptr() as *mut c_double;
                 unsafe{xc_gga_vxc(func_ptr, n_points, rho_ptr, sig_ptr, v_rho_ptr, v_sigma_ptr)};
@@ -208,7 +216,7 @@ impl LibXCFunctional{
     pub fn get_family(&self) -> &LibXCFamily{
         return &self.family
     }
-    
+
     pub fn get_id(&self) -> u32{
         return self.id
     }
