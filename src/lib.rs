@@ -18,30 +18,60 @@ include!(concat!(env!("OUT_DIR"), "/libxc-bindings.rs"));
 
 
 
-pub struct VxcReturnType{
-    v_rho: Vec<f64>,
-    v_sigma: Option<Vec<f64>>,
+pub enum LibXCEvalType {
+    EXC,
+    VXC,
+    FXC,
 }
 
-impl VxcReturnType{
-    pub fn new(v_rho: Vec<f64>, v_sigma: Option<Vec<f64>>) -> Self {
-        Self {
-            v_rho,
-            v_sigma
+pub enum LibXCReturnType{
+    EXC(Vec<f64>),
+
+    LDAVXC(Vec<f64>),
+    LDAFXC(Vec<f64>),
+
+    GGAVXC(Vec<f64>, Vec<f64>),
+    GGAFXC(Vec<f64>, Vec<f64>, Vec<f64>),
+
+}
+
+impl LibXCReturnType {
+    pub fn get_exc(self) -> Option<Vec<f64>> {
+        match self {
+            Self::EXC(exc) => Some(exc),
+            _ => None
         }
     }
 
-    pub fn get_v_rho(&self) -> &Vec<f64> {
-        &self.v_rho
+    pub fn get_lda_vxc(self) -> Option<Vec<f64>> {
+        match self {
+            Self::LDAVXC(vxc) => Some(vxc),
+            _ => None
+        }
     }
 
-    pub fn get_v_sigma(&self) -> Option<&Vec<f64>> {
-        match &self.v_sigma {
-            Some(v) => return Some(&v),
-            None => return None,
+    pub fn get_lda_fxc(self) -> Option<Vec<f64>> {
+        match self {
+            Self::LDAFXC(fxc) => Some(fxc),
+            _ => None
+        }
+    }
+
+    pub fn get_gga_vxc(self) -> Option<(Vec<f64>, Vec<f64>)> {
+        match self {
+            Self::GGAVXC(vrho, vsigma) => Some((vrho, vsigma)),
+            _ => None
+        }
+    }
+
+    pub fn get_gga_fxc(self) -> Option<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+        match self {
+            Self::GGAFXC(v2rho2, v2rhosigma, v2sigma2) => Some((v2rho2, v2rhosigma, v2sigma2)),
+            _ => None
         }
     }
 }
+
 
 #[derive(Debug)]
 pub enum LibXCSpin{
@@ -99,10 +129,10 @@ impl LibXCFunctional{
         };
 
         let dim: Vec<usize> = match (&spin, &family) {
-            (LibXCSpin::Unpolarized, LibXCFamily::LDA) => vec![1, 0],
-            (LibXCSpin::Unpolarized, LibXCFamily::GGA) => vec![1, 1],
-            (LibXCSpin::Polarized, LibXCFamily::LDA) => vec![2, 0],
-            (LibXCSpin::Polarized, LibXCFamily::GGA) => vec![2, 3],
+            (LibXCSpin::Unpolarized, LibXCFamily::LDA) => vec![1, 1, 1],
+            (LibXCSpin::Unpolarized, LibXCFamily::GGA) => vec![1, 1, 1],
+            (LibXCSpin::Polarized, LibXCFamily::LDA) => vec![2, 2, 3],
+            (LibXCSpin::Polarized, LibXCFamily::GGA) => vec![2, 3, 6],
             (_, LibXCFamily::Other) => vec![0, 0],
         };
         Ok(
@@ -116,8 +146,12 @@ impl LibXCFunctional{
         )
     }
 
-
-    pub fn eval_exc<S>(&self, rho:S, sigma: Option<S>) -> Result<Vec<f64>>
+    pub fn evaluate<S>(
+        &self,
+        rho: S,
+        sigma: Option<S>,
+        typ: LibXCEvalType,
+        ) -> Result<LibXCReturnType>
     where S: AsRef<[f64]>
     {
 
@@ -134,78 +168,152 @@ impl LibXCFunctional{
         let rho_ptr = rho_slice.as_ptr() as *const c_double;
 
 
-        let mut zk: Vec<f64> = vec![0.0; n_points];
-        let zk_ptr = zk.as_mut_ptr() as *mut c_double;
 
 
+
+        match (&self.family, &sigma) {
+            (LibXCFamily::LDA, Some(_)) => return Err(
+                anyhow!(
+                    "Found 'sigma != None' while evaluating a \
+                    'LibXCFamily::LDA' functional"
+                    )
+                ),
+
+            (LibXCFamily::GGA, None) => return Err(
+                anyhow!(
+                    "Found 'sigma = None' while evaluating a \
+                    'LibXCFamily::GGA' functional"
+                    )
+                ),
+
+
+            (LibXCFamily::Other, _) => return Err(
+                anyhow!(
+                    "Only LDA and GGA are supported!"
+                    )
+                ),
+
+            (_, _) => ()
+        };
 
         match self.family {
+
             LibXCFamily::LDA => {
-                unsafe{xc_lda_exc(func_ptr, n_points, rho_ptr, zk_ptr)};
+                match typ {
+                    LibXCEvalType::EXC => {
+                        let mut exc: Vec<f64> = vec![0.0; n_points];
+                        let exc_ptr = exc.as_mut_ptr() as *mut c_double;
+                        unsafe{
+                            xc_lda_exc(
+                                func_ptr,
+                                n_points,
+                                rho_ptr,
+                                exc_ptr
+                                )
+                        };
+                        return Ok(LibXCReturnType::EXC(exc))
+                    },
+                    LibXCEvalType::VXC => {
+                        let mut vrho: Vec<f64> = vec![0.0; self.dim[1]*n_points];
+                        let vrho_ptr = vrho.as_mut_ptr() as *mut c_double;
+                        unsafe{
+                            xc_lda_vxc(
+                                func_ptr,
+                                n_points,
+                                rho_ptr,
+                                vrho_ptr
+                                )
+                        };
+                        return Ok(LibXCReturnType::LDAVXC(vrho))
+                    },
+                    LibXCEvalType::FXC => {
+                        let mut v2rho2: Vec<f64> = vec![0.0; self.dim[2]*n_points];
+                        let v2rho2_ptr = v2rho2.as_mut_ptr() as *mut c_double;
+                        unsafe{
+                            xc_lda_fxc(
+                                func_ptr,
+                                n_points,
+                                rho_ptr,
+                                v2rho2_ptr
+                                )
+                        };
+                        return Ok(LibXCReturnType::LDAFXC(v2rho2))
+                    },
+                }
             },
 
             LibXCFamily::GGA => {
-                let Some(sig) = sigma else {
-                    return Err(anyhow!("Expecting sigma not None for evaluating a GGA functional!"))
-                };
-
+                let sig = sigma.unwrap();
                 let sig_slice: &[f64] = sig.as_ref();
+
                 if sig_slice.len() % self.dim[1] != 0 {
                     return Err(anyhow!("Length of spin polarized sigma must be 3 times the number of points!"))
                 }
-
                 let sig_ptr = sig_slice.as_ptr() as *const c_double;
-                unsafe{xc_gga_exc(func_ptr, n_points, rho_ptr, sig_ptr, zk_ptr)};
-            },
 
-            _ => return Err(anyhow!("Only LDA and GGA are supported!"))
-        }
-        Ok(zk)
-    }
+                match typ {
+                    LibXCEvalType::EXC => {
+                        let mut exc: Vec<f64> = vec![0.0; n_points];
+                        let exc_ptr = exc.as_mut_ptr() as *mut c_double;
+                        unsafe{
+                            xc_gga_exc(
+                                func_ptr,
+                                n_points,
+                                rho_ptr,
+                                sig_ptr,
+                                exc_ptr
+                                )
+                        };
+                        return Ok(LibXCReturnType::EXC(exc))
+                    },
+                    LibXCEvalType::VXC => {
+                        let mut vrho: Vec<f64> = vec![0.0; self.dim[0]*n_points];
+                        let vrho_ptr = vrho.as_mut_ptr() as *mut c_double;
 
-    pub fn eval_vxc<S>(&self, rho: S, sigma: Option<S>) -> Result<VxcReturnType>
-    where S: AsRef<[f64]>
-    {
+                        let mut vsigma: Vec<f64> = vec![0.0; self.dim[1]*n_points];
+                        let vsigma_ptr = vsigma.as_mut_ptr() as *mut c_double;
 
-        let rho_slice: &[f64] = rho.as_ref();
-        let mut n_points = rho_slice.len();
+                        unsafe{
+                            xc_gga_vxc(
+                                func_ptr,
+                                n_points,
+                                rho_ptr,
+                                sig_ptr,
+                                vrho_ptr,
+                                vsigma_ptr
+                                )
+                        };
+                        return Ok(LibXCReturnType::GGAVXC(vrho, vsigma))
+                    },
+                    LibXCEvalType::FXC => {
+                        let mut v2rho2: Vec<f64> = vec![0.0; self.dim[1]*n_points];
+                        let v2rho2_ptr = v2rho2.as_mut_ptr() as *mut c_double;
 
-        if n_points % self.dim[0] != 0 {
-            return Err(anyhow!("Length of spin polarized rho must be  even!"))
-        }
+                        let mut v2rhosigma: Vec<f64> = vec![0.0; self.dim[2]*n_points];
+                        let v2rhosigma_ptr = v2rhosigma.as_mut_ptr() as *mut c_double;
 
-        n_points = n_points / self.dim[0];
+                        let mut v2sigma2: Vec<f64> = vec![0.0; self.dim[2]*n_points];
+                        let v2sigma2_ptr = v2sigma2.as_mut_ptr() as *mut c_double;
 
-        let func_ptr = &self.func as *const xc_func_type;
-        let rho_ptr = rho_slice.as_ptr() as *const c_double;
-
-
-        let mut v_rho: Vec<f64> = vec![0.0; self.dim[0]*n_points];
-        let v_rho_ptr = v_rho.as_mut_ptr() as *mut c_double;
-
-
-
-        match self.family {
-            LibXCFamily::LDA => {
-                unsafe{xc_lda_vxc(func_ptr, n_points, rho_ptr, v_rho_ptr)};
-                return Ok(VxcReturnType::new(v_rho, None))
-            },
-
-            LibXCFamily::GGA => {
-                let Some(sig) = sigma else {
-                    return Err(anyhow!("Expecting sigma not None for evaluating a GGA functional!"))
+                        unsafe{xc_gga_fxc(
+                                func_ptr,
+                                n_points,
+                                rho_ptr,
+                                sig_ptr,
+                                v2rho2_ptr,
+                                v2rhosigma_ptr,
+                                v2sigma2_ptr,
+                                )
+                        };
+                        return Ok(
+                            LibXCReturnType::GGAFXC(
+                                v2rho2,
+                                v2rhosigma,
+                                v2sigma2)
+                                  )
+                    },
                 };
 
-                let sig_slice: &[f64] = sig.as_ref();
-                if sig_slice.len() % self.dim[1] != 0 {
-                    return Err(anyhow!("Length of spin polarized sigma must be 3 times the number of points!"))
-                }
-
-                let sig_ptr = sig_slice.as_ptr() as *const c_double;
-                let mut v_sigma: Vec<f64> = vec![0.0; self.dim[1]*n_points];
-                let v_sigma_ptr = v_sigma.as_mut_ptr() as *mut c_double;
-                unsafe{xc_gga_vxc(func_ptr, n_points, rho_ptr, sig_ptr, v_rho_ptr, v_sigma_ptr)};
-                return Ok(VxcReturnType::new(v_rho, Some(v_sigma)))
             },
 
             _ => return Err(anyhow!("Only LDA and GGA are supported!"))
@@ -295,8 +403,14 @@ mod tests {
         let lda_c_pz = LibXCFunctional::new(9, LibXCSpin::Unpolarized).unwrap();
         let lda_x = LibXCFunctional::new(1, LibXCSpin::Unpolarized).unwrap();
 
-        let e_c = lda_c_pz.eval_exc(&rho, None).unwrap();
-        let e_x = lda_x.eval_exc(&rho, None).unwrap();
+        let e_c = lda_c_pz.evaluate(&rho, None, LibXCEvalType::EXC)
+            .unwrap()
+            .get_exc()
+            .unwrap() ;
+        let e_x = lda_x.evaluate(&rho, None, LibXCEvalType::EXC)
+            .unwrap()
+            .get_exc()
+            .unwrap();
 
         let e_xc: Vec<f64> = e_c
             .iter()
@@ -325,8 +439,15 @@ mod tests {
         let lda_c_pz = LibXCFunctional::new(9, LibXCSpin::Polarized).unwrap();
         let lda_x = LibXCFunctional::new(1, LibXCSpin::Polarized).unwrap();
 
-        let e_c = lda_c_pz.eval_exc(&rho, None).unwrap();
-        let e_x = lda_x.eval_exc(&rho, None).unwrap();
+        let e_c = lda_c_pz.evaluate(&rho, None, LibXCEvalType::EXC)
+            .unwrap()
+            .get_exc()
+            .unwrap();
+
+        let e_x = lda_x.evaluate(&rho, None, LibXCEvalType::EXC)
+            .unwrap()
+            .get_exc()
+            .unwrap();
 
         let e_xc: Vec<f64> = e_c
             .iter()
